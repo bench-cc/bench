@@ -1,0 +1,11 @@
+{
+    "name": "main",
+    "description": "the main bench repository",
+    "packages": [
+        {
+            "name": "bench",
+            "description": "a lightweight package manager for CC",
+            "version": 1.0
+        }
+    ]
+}
