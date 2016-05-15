@@ -6,6 +6,9 @@
 			"name": "bench",
 			"description": "a lightweight package manager for CC",
 			"version": 1.0,
+			"download": {
+				"bench.lua": "https://raw.githubusercontent.com/apemanzilla-cc/bench/master/src/bench.lua"
+			},
 			"install_location": "/.bench",
 			"tags": ["bench", "package", "manager", "install"],
 			"launch": "bench.lua"
