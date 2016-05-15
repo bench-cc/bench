@@ -44,7 +44,7 @@ local function writeConfig(name, value)
 	local d = {}
 	if fs.exists(dirs.config) then
 		local f = fs.open(dirs.config, "r")
-		local d = json:decode(f.readAll())
+		d = json:decode(f.readAll())
 		f.close()
 	end
 	d[name] = value
@@ -219,10 +219,15 @@ local function validateRepo(data)
 	return true, ""
 end
 
+local function split(n)
+	expect(n, "string", 1)
+	return n:match("([%w%d-_]+)/([%w%d-_]+)")
+end
+
 local function resolvePackage(name)
 	expect(name, "string", 1)
 
-	local repo, pkg = name:match("([%w%d-_]+)/([%w%d-_]+)")
+	local repo, pkg = split(name)
 	if not repo then
 		pkg = name
 	end
@@ -257,11 +262,163 @@ local function resolvePackage(name)
 	end
 end
 
+local function qualify(repo, name)
+	expect(repo, "string", 1)
+	expect(name, "string", 2)
+	if split(name) then
+		return name
+	else
+		return repo .. "/" .. name
+	end
+end
+
+local function repoContains(repo, pkg)
+	expect(repo, "string", 1)
+	expect(pkg, "string", 2)
+
+	local r = loadRepo(repo)
+	if not r then return false, "repo '" .. repo .. "' not present" end
+	local _, name = split(qualify(repo, pkg))
+	for i, v in ipairs(r.packages) do
+		if v.name == name then
+			return true
+		end
+	end
+	return false
+end
+
+local function getInstalledPackages(repo)
+	expect(repo, "string", 1)
+	
+	local pkgs = {}
+	local installed = readConfig("installed", {})
+	for name, version in pairs(installed) do
+		if repoContains(repo, name) then
+			table.insert(pkgs, name)
+		end
+	end
+	return pkgs
+end
+
+local function isInstalled(pkg)
+	expect(pkg, "string", 1)
+
+	local pkg, err = resolvePackage(pkg)
+	if not pkg then return false, err end
+
+	local installed = readConfig("installed", {})
+	for name, version in pairs(installed) do
+		if name == pkg.qname then
+			return true, ""
+		end
+	end
+	return false, ""
+end
+
+local function tblContains(t, s)
+	expect(t, "table", 1)
+	for k, v in pairs(t) do
+		if v == s then
+			return true
+		end
+	end
+	return false
+end
+
+local function buildDepList(name)
+	expect(name, "string", 1)
+	local pkg, e = resolvePackage(name)
+	if not pkg then return false, e end
+	local repo, _ = split(pkg.qname)
+	if not pkg then return false, e end
+	local deps = {}
+	if pkg.depends then
+		for i, v in ipairs(pkg.depends) do
+			v = qualify(repo, v)
+			local d, e = buildDepList(v)
+			if not d then
+				return false, e
+			else
+				for j, w in ipairs(d) do
+					if not tblContains(deps, w) then
+						table.insert(deps, w)
+					end
+				end
+			end
+		end
+	elseif not (tblContains(deps, "main/bench") or pkg.qname == "main/bench") then
+		table.insert(deps, "main/bench")
+	end
+	table.insert(deps, pkg.qname)
+	return deps
+end
+
+local function install(package)
+	-- does NOT install dependencies!
+	expect(package, "string", 1)
+
+	local pkg, e = resolvePackage(package)
+	if not pkg then return false, e end
+
+	if isInstalled(pkg.qname) then return false, "package '" .. pkg.qname .. "' already installed" end
+	local data = {}
+	if pkg.download then
+		for name, uri in pairs(pkg.download) do
+			local ok, d = download(uri)
+			if not ok then
+				return false, d
+			end
+			data[name] = d
+		end
+	end
+
+	local installLocation = pkg.install_location or fs.combine(dirs.packages, pkg.qname)
+	for name, filedata in pairs(data) do
+		writeFile(filedata, fs.combine(installLocation, name))
+	end
+
+	local installed = readConfig("installed", {})
+	local locations = readConfig("install_locations", {})
+	installed[pkg.qname] = pkg.version
+	locations[pkg.qname] = installLocation
+	writeConfig("installed", installed)
+	writeConfig("install_locations", locations)
+
+	return true, ""
+end
+
+local function uninstall(package)
+	expect(package, "string", 1)
+
+	local pkg, e = resolvePackage(package)
+	if not pkg then return false, e end
+
+	if not isInstalled(pkg.qname) then return false, "package '" .. pkg.qname .. "' not installed" end
+	local installLocation = readConfig("install_locations", {})[pkg.qname] or pkg.install_location or fs.combine(dirs.packages, pkg.qname)
+
+	fs.delete(installLocation)
+
+	local installed = readConfig("installed", {})
+	local locations = readConfig("install_locations", {})
+	installed[pkg.qname] = nil
+	locations[pkg.qname] = nil
+	writeConfig("installed", installed)
+	writeConfig("install_locations", locations)
+
+	local repo = split(pkg.qname)
+	if #getInstalledPackages(repo) == 0 and fs.exists(fs.combine(dirs.packages, repo)) then
+		fs.delete(fs.combine(dirs.packages, repo))
+	end
+
+	return true, ""
+end
+
 local actions = {}
 
 local action_mt = {}
 action_mt.critical = false
 action_mt.verbose = false
+action_mt.interactive = false
 
 function actions.new(name)
 	expect(name, "string", 1)
@@ -352,22 +509,22 @@ function actions.addRepo(link)
 	return action
 end
 
-function actions.removeRepo(name)
-	expect(name, "string", 1)
+function actions.removeRepo(repo)
+	expect(repo, "string", 1)
 
 	local action = actions.new("removerepo")
-	action.name = name
+	action.repo = repo
 
 	function action:run()
 		local repos = loadRepos()
 		local link
 		for i, v in ipairs(repos) do
-			if v.name == self.name then
+			if v.name == self.repo then
 				link = v.link
 				break
 			end
 		end
-		if self:assert(link, "repo " .. name .. " not present") then
+		if self:assert(link, "repo " .. self.repo .. " not present") then
 			local links = getRepos()
 			for i, v in ipairs(links) do
 				if v == link then
@@ -381,7 +538,77 @@ function actions.removeRepo(name)
 			fetch.verbose = false
 			fetch:run()
 
-			self:log("removed repo " .. self.name)
+			self:log("removed repo " .. self.repo)
+		end
+	end
+
+	return action
+end
+
+function actions.install()
+	local action = actions.new("install")
+	action.interactive = true
+	action.queue = {}
+
+	function action:run()
+		if #self.queue ~= 0 then
+			local queue2 = {}
+			for i, v in ipairs(self.queue) do
+				local pkg, e = resolvePackage(v)
+				if not self:assert(pkg, e) then return end
+				local deps, e = buildDepList(pkg.qname)
+				if not self:assert(deps, e) then return end
+				for i, v in ipairs(deps) do
+					if not isInstalled(v) then
+						table.insert(queue2, v)
+					end
+				end
+			end
+
+			if #queue2 == 0 then
+				self:log("No new packages to install.")
+				return
+			end
+
+			self:log("Packages to be installed:\n" .. table.concat(queue2, ", ") .. "\n")
+			if self.interactive then
+				term.setCursorBlink(true)
+				if #queue2 == 1 then
+					write("Install this 1 package? [Y/N] ")
+				else
+					write("Install these " .. #queue2 .. " packages? [Y/N] ")
+				end
+				local char = ""
+				while char:lower() ~= "y" and char:lower() ~= "n" do
+					local e = {os.pullEvent()}
+					if e[1] == "char" then char = e[2] end
+				end
+				term.setCursorBlink(false)
+				print(char)
+				if not self:assert(char:lower() == "y", "user cancelled installation") then return end
+			end
+
+			local installed = {}
+
+			local function revert()
+				for i, v in ipairs(installed) do
+					uninstall(v)
+				end
+			end
+
+			for i, v in ipairs(queue2) do
+				self:log(("Installing package %s (%i/%i)"):format(v, i, #queue2))
+				local ok, err = install(v)
+				if not ok then
+					self:log("Problem installing " .. v .. ", reverting")
+					revert()
+					self:assert(ok, err)
+					return
+				else
+					table.insert()
+				end
+			end
+			self:log("Installation complete, " .. #queue2 .. " new packages installed.")
 		end
 	end
 
@@ -406,6 +633,12 @@ if #args > 0 then
 			subcmd = "addrepo"
 		elseif arg:lower() == "removerepo" then
 			subcmd = "removerepo"
+		elseif arg:lower() == "install" then
+			subcmd = "install"
+			local inst = actions.install()
+			inst.critical = true
+			inst.verbose = true
+			table.insert(actionQueue, inst)
 		elseif subcmd then
 			if subcmd == "addrepo" then
 				local add = actions.addRepo(arg)
@@ -419,6 +652,13 @@ if #args > 0 then
 				remove.verbose = true
 				table.insert(actionQueue, remove)
 				subcmd = nil
+			elseif subcmd == "install" then
+				if actionQueue[#actionQueue].name == "install" then
+					-- yo dawg i heard you liked queues
+					table.insert(actionQueue[#actionQueue].queue, arg)
+				else
+					error("this should never happen!")
+				end
 			end
 		else
 			error("expected subcommand, got '" .. arg .. "'", 0)
@@ -430,6 +670,5 @@ if #args > 0 then
 		v:run()
 	end
 else
-	-- usage
-	print("TODO put cli usage here")
+	-- print("TODO put cli usage here")
 end
