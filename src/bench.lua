@@ -460,6 +460,63 @@ local function uninstall(package)
 	return true, ""
 end
 
+local function canUpgrade(package)
+	expect(package, "string", 1)
+
+	local pkg, e = resolvePackage(package)
+	if not pkg then return false, e end
+
+	if not isInstalled(pkg.qname) then return false, "package '" .. pkg.qname .. "' is not installed" end
+	local installed = readConfig("installed", {})
+	local instData = installed[pkg.qname] or pkg
+	local location = instData.install_location or fs.combine(dirs.packages, pkg.qname)
+
+	return instData.version < pkg.version, ""
+end
+
+local function upgrade(package)
+	expect(package, "string", 1)
+
+	local pkg, e = resolvePackage(package)
+	if not pkg then return false, e end
+
+	if not isInstalled(pkg.qname) then return false, "package '" .. pkg.qname .. "' is not installed" end
+	local installed = readConfig("installed", {})
+	local instData = installed[pkg.qname] or pkg
+	local location = instData.install_location or fs.combine(dirs.packages, pkg.qname)
+
+	if instData.version >= pkg.version then
+		return false, "package '" .. pkg.qname .. "' is up to date"
+	end
+	installed[pkg.qname] = pkg
+	writeConfig("installed", installed)
+
+	local data = {}
+
+	if pkg.download then
+		for name, uri in pairs(pkg.download) do
+			local ok, d = download(uri)
+			if not ok then
+				return false, d
+			end
+			data[name] = d
+		end
+	end
+
+	for name, _ in pairs(instData.download or {}) do
+		if fs.exists(fs.combine(location, name)) then
+			fs.delete(fs.combine(location, name))
+		end
+	end
+
+	local installLocation = pkg.install_location or fs.combine(dirs.packages, pkg.qname)
+	for name, filedata in pairs(data) do
+		writeFile(filedata, fs.combine(installLocation, name))
+	end
+
+	return true, ""
+end
+
 local function run(package, file, args)
 	expect(package, "string", 1)
 	expect(file, "string", 2)
@@ -565,6 +622,7 @@ function actions.fetch(repos)
 		if self:assert(writeFile(json:encode_pretty(fetched), dirs.repos)) then
 			self:log("Fetch complete")
 		end
+		return true
 	end
 
 	return action
@@ -599,6 +657,7 @@ function actions.addRepo(link)
 			self:log("Added repo '" .. repo.name .. "'")
 			writeConfig("repos", repos)
 		end
+		return true
 	end
 
 	return action
@@ -644,6 +703,7 @@ function actions.removeRepo(repo)
 			fetch:run()
 
 			self:log("Removed repo '" .. self.repo .. "'")
+			return true
 		end
 	end
 
@@ -677,16 +737,16 @@ function actions.install()
 
 			if #queue2 == 0 then
 				self:log("No new packages to install.")
-				return
+				return true
 			end
 
 			self:log("Packages to be installed:\n" .. table.concat(queue2, ", ") .. "\n")
 			if self.interactive then
 				term.setCursorBlink(true)
 				if #queue2 == 1 then
-					write("Install this 1 package? [Y/N] ")
+					write("Install 1 package? [Y/N] ")
 				else
-					write("Install these " .. #queue2 .. " packages? [Y/N] ")
+					write("Install " .. #queue2 .. " packages? [Y/N] ")
 				end
 				local char = ""
 				while char:lower() ~= "y" and char:lower() ~= "n" do
@@ -719,6 +779,7 @@ function actions.install()
 				end
 			end
 			self:log("Installation complete, " .. #queue2 .. " new package(s) installed.")
+			return true
 		end
 	end
 
@@ -751,16 +812,16 @@ function actions.uninstall()
 
 			if #queue2 == 0 then
 				self:log("No packages to uninstall.")
-				return
+				return true
 			end
 
 			self:log("Packages to be removed:\n" .. table.concat(queue2, ", ") .. "\n")
 			if self.interactive then
 				term.setCursorBlink(true)
 				if #queue2 == 1 then
-					write("Remove this 1 package? [Y/N] ")
+					write("Remove 1 package? [Y/N] ")
 				else
-					write("Remove these " .. #queue2 .. " packages? [Y/N] ")
+					write("Remove " .. #queue2 .. " packages? [Y/N] ")
 				end
 				local char = ""
 				while char:lower() ~= "y" and char:lower() ~= "n" do
@@ -781,7 +842,84 @@ function actions.uninstall()
 				end
 			end
 			self:log("Removal complete, " .. #queue2 .. " package(s) removed.")
+			return true
 		end
+	end
+
+	return action
+end
+
+function actions.upgrade()
+	local action = actions.new("upgrade")
+	action.interactive = true
+
+	function action:run()
+		self:log("Calculating upgrade...")
+
+		local fetch = actions.fetch()
+		fetch.critical = self.critical
+		fetch.verbose = false
+		fetch.interactive = self.interactive
+		fetch:run()
+
+		local queue, instQueue = {}, {}
+		local installed = readConfig("installed", {})
+		for name, pkg in pairs(installed) do
+			if canUpgrade(name) then
+				table.insert(queue, name)
+				local deps, err = buildDepList(name)
+				if not self:assert(deps, err) then return false end
+				for i, v in ipairs(deps) do
+					if not isInstalled(v) then
+						if not tblContains(instQueue, v) then table.insert(instQueue, v) end
+					end
+				end
+			end
+		end
+
+		if #instQueue > 0 then
+			local install = actions.install()
+			install.verbose = self.verbose
+			install.critical = self.critical
+			install.interactive = self.interactive
+			install.queue = instQueue
+			if not self:assert(install:run(), "required packages for upgrade were not installed") then return end
+		end
+
+		if #queue == 0 then
+			self:log("All packages are up-to-date.")
+			return true
+		end
+		
+		self:log("Packages to be upgraded:\n" .. table.concat(queue, ", ") .. "\n")
+		if self.interactive then
+			term.setCursorBlink(true)
+			if #queue == 1 then
+				write("Upgrade 1 package? [Y/N] ")
+			else
+				write("Upgrade " .. #queue .. " packages? [Y/N] ")
+			end
+			local char = ""
+			while char:lower() ~= "y" and char:lower() ~= "n" do
+				local e = {os.pullEvent()}
+				if e[1] == "char" then char = e[2] end
+			end
+			term.setCursorBlink(false)
+			print(char)
+			if not self:assert(char:lower() == "y", "upgrade cancelled by user") then return end
+		end	
+
+		local upgraded = {}
+		for i, v in ipairs(queue) do
+			self:log(("Upgrading package %s (%i/%i)"):format(v, i, #queue))
+			local ok, err = upgrade(v)
+			if not self:assert(ok, err) then return else
+				table.insert(upgraded, v)
+			end
+		end
+
+		self:log("Upgrade complete, " .. #queue .. " package(s) upgraded.")
+		return true
 	end
 
 	return action
@@ -851,6 +989,11 @@ if #args > 0 then
 			table.insert(actionQueue, uninst)
 		elseif arg:lower() == "launch" then
 			subcmd = "launch"
+		elseif arg:lower() == "upgrade" then
+			local upgrade = actions.upgrade()
+			upgrade.critical = true
+			upgrade.verbose = true
+			table.insert(actionQueue, upgrade)
 		elseif subcmd then
 			if subcmd == "addrepo" then
 				local add = actions.addRepo(arg)
