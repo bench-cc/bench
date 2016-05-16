@@ -545,24 +545,30 @@ local function run(package, file, args)
 		require = function(req)
 			expect(req, "string", 1)
 
-			local parts = {}
-			for part in req:gmatch("([^/\\]+)") do
-				table.insert(parts, part)
+			if fs.exists(fs.combine(loc, req)) then
+				local ok, out = run(pkg.qname, req)
+				if not ok then error(out, 2) end
+				return out
+			else
+				local parts = {}
+				for part in req:gmatch("([^/\\]+)") do
+					table.insert(parts, part)
+				end
+				local p, err, f2
+				if #parts < 2 then
+					error("could not resolve target", 2)
+				elseif #parts == 2 then
+					p, err = resolvePackage(table.remove(parts, 1))
+					f2 = table.concat(parts, "/")
+				elseif #parts >= 3 then
+					p, err = resolvePackage(table.remove(parts, 1) .. "/" .. table.remove(parts, 1))
+					f2 = table.concat(parts, "/")
+				end
+				if not p then error(err, 2) end
+				local ok, out = run(p.qname, f2)
+				if not ok then error(out, 2) end
+				return out
 			end
-			local p, err, f2
-			if #parts < 2 then
-				error("invalid argument", 2)
-			elseif #parts == 2 then
-				p, err = resolvePackage(table.remove(parts, 1))
-				f2 = table.concat(parts, "/")
-			elseif #parts >= 3 then
-				p, err = resolvePackage(table.remove(parts, 1) .. "/" .. table.remove(parts, 1))
-				f2 = table.concat(parts, "/")
-			end
-			if not p then error(err, 2) end
-			local ok, out = run(p.qname, f2)
-			if not ok then error(out, 2) end
-			return out
 		end
 	}, {__index = _G}))
 	return pcall(f, unpack(args or {}))
