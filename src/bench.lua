@@ -812,13 +812,16 @@ local args = {...}
 
 if #args > 0 then
 	local actionQueue = {}
+	local flags = {}
 	local subcmd = nil
 	local arg = table.remove(args, 1)
 
 	while arg do
 		local rawarg = arg
 		arg = tostring(arg)
-		if arg:lower() == "fetch" then
+		if arg:sub(1,1) == "-" then
+			flags[arg:sub(2)] = true
+		elseif arg:lower() == "fetch" then
 			local fetch = actions.fetch()
 			fetch.critical = true
 			fetch.verbose = true
@@ -876,6 +879,9 @@ if #args > 0 then
 	end
 
 	for i, v in ipairs(actionQueue) do
+		if flags.y then
+			v.interactive = false
+		end
 		v:run()
 	end
 end
