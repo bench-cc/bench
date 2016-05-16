@@ -30,7 +30,8 @@
 				"hello.lua": "https://raw.githubusercontent.com/apemanzilla-cc/bench/master/src/hello.lua"
 			},
 			"tags": ["hello", "world", "example", "program"],
-			"launch": "hello.lua"
+			"launch": "hello.lua",
+			"depends": ["hellolib"]
 		}
 	]
 }
