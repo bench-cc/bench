@@ -182,7 +182,9 @@ local packageOptional = {
 	depends = "table",
 	launch = "string",
 	install_location = "string",
-	tags = "table"
+	tags = "table",
+	setup = "string",
+	cleanup = "string"
 }
 
 local function validatePackage(data)
@@ -417,6 +419,49 @@ local function uninstall(package)
 	end
 
 	return true, ""
+end
+
+local function run(package, file, args)
+	expect(package, "string", 1)
+	expect(file, "string", 2)
+	expect(args, "table", 3, true)
+
+	local pkg, e = resolvePackage(package)
+	if not pkg then return false, e end
+
+	local inst = readConfig("installed", {})[pkg.qname]
+	local loc = inst and inst.install_location or fs.combine(dirs.packages, pkg.qname)
+	local file = fs.combine(loc, file)
+	if not fs.exists(file) then return false, "file not found" end
+
+	local data, e = readFile(file)
+	if not data then return false, e end
+
+	local f = load(data, fs.getName(file), nil, setmetatable({
+		require = function(req)
+			expect(req, "string", 1)
+
+			local parts = {}
+			for part in req:gmatch("([^/\\]+)") do
+				table.insert(parts, part)
+			end
+			local p, err, f2
+			if #parts < 2 then
+				error("invalid argument", 2)
+			elseif #parts == 2 then
+				p, err = resolvePackage(table.remove(parts, 1))
+				f2 = table.concat(parts, "/")
+			elseif #parts >= 3 then
+				p, err = resolvePackage(table.remove(parts, 1) .. "/" .. table.remove(parts, 1))
+				f2 = table.concat(parts, "/")
+			end
+			if not p then error(err, 2) end
+			local ok, out = run(p.qname, f2)
+			if not ok then error(out, 2) end
+			return out
+		end
+	}, {__index = _G}))
+	return pcall(f, unpack(args or {}))
 end
 
 local actions = {}
@@ -688,6 +733,31 @@ function actions.uninstall()
 	return action
 end
 
+function actions.launch(package, args)
+	expect(package, "string", 1)
+	expect(args, "table", 2, true)
+
+	local action = actions.new("launch")
+
+	action.pkg = package
+	action.args = args
+
+	function action:run()
+		local pkg, e = resolvePackage(self.pkg)
+		if self:assert(pkg, e) then
+			if self:assert(isInstalled(pkg.qname)) then
+				local inst = readConfig("installed", {})[pkg.qname]
+				if self:assert(inst.launch, "package " .. pkg.qname .. " is not runnable") then
+					self:log("Launching " .. pkg.qname)
+					self:assert(run(pkg.qname, inst.launch, unpack(self.args or {})))
+				end
+			end
+		end
+	end
+
+	return action
+end
+
 -- parse args
 local args = {...}
 
@@ -720,6 +790,8 @@ if #args > 0 then
 			uninst.critical = true
 			uninst.verbose = true
 			table.insert(actionQueue, uninst)
+		elseif arg:lower() == "launch" then
+			subcmd = "launch"
 		elseif subcmd then
 			if subcmd == "addrepo" then
 				local add = actions.addRepo(arg)
@@ -742,6 +814,11 @@ if #args > 0 then
 				if actionQueue[#actionQueue].name == "uninstall" then
 					table.insert(actionQueue[#actionQueue].queue, arg)
 				end
+			elseif subcmd == "launch" then
+				local launch = actions.launch(arg)
+				launch.critical = true
+				table.insert(actionQueue, launch)
+				subcmd = nil
 			end
 		else
 			error("expected subcommand, got '" .. arg .. "'", 0)
@@ -752,6 +829,6 @@ if #args > 0 then
 	for i, v in ipairs(actionQueue) do
 		v:run()
 	end
-else
-	-- print("TODO put cli usage here")
 end
+
+return actions
