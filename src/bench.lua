@@ -882,6 +882,12 @@ if #args > 0 then
 		if flags.y then
 			v.interactive = false
 		end
+		if flags.q then
+			v.verbose = false
+		end
+		if flags.f then
+			v.critical = false
+		end
 		v:run()
 	end
 end
