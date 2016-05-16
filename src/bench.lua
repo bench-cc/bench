@@ -354,7 +354,46 @@ local function buildDepList(name)
 		table.insert(deps, "main/bench")
 	end
 	table.insert(deps, pkg.qname)
-	return deps
+	return deps, ""
+end
+
+local function reverseDepList(name, checked)
+	expect(name, "string", 1)
+	expect(checked, "table", 2, true)
+	local pkg, e = resolvePackage(name)
+	if not pkg then return false, e end
+	local rdeps = {}
+	local repos = loadRepos()
+	for _, repo in ipairs(repos) do
+		for _, pack in ipairs(repo.packages) do
+			local d = {}
+			if pack.depends then
+				for i, dep in ipairs(pack.depends) do
+					table.insert(d, qualify(repo.name, dep))
+				end
+			end
+			if not tblContains(d, "main/bench") then
+				table.insert(d, "main/bench")
+			end
+			if tblContains(d, pkg.qname) then
+				table.insert(rdeps, 1, pack.qname)
+			end
+		end
+	end
+	local checked = checked or {}
+	for _, dep in ipairs(rdeps) do
+		if not tblContains(checked, dep) then
+			table.insert(checked, dep)
+			local recurse, err = reverseDepList(dep, checked)
+			if not recurse then return false, err end
+			for _, v in ipairs(recurse) do
+				if not tblContains(rdeps, v) then
+					table.insert(rdeps, 1, v)
+				end
+			end
+		end
+	end
+	return rdeps, ""
 end
 
 local function install(package)
@@ -513,13 +552,13 @@ function actions.fetch(repos)
 			local valid, err = validateRepo(repo)
 			self:assert(valid, "repo " .. (repo.name or ("at " .. link)) .. " is invalid: " .. err)
 			if ok and valid then
+				self:log(("Fetched repo '%s' (%i/%i)"):format(repo.name, i, #repos))
 				table.insert(fetched, repo)
-				self:log("fetched repo " .. repo.name)
 			end
 		end
 
 		if self:assert(writeFile(json:encode_pretty(fetched), dirs.repos)) then
-			self:log("fetch complete")
+			self:log("Fetch complete")
 		end
 	end
 
@@ -545,14 +584,14 @@ function actions.addRepo(link)
 		local repo = json:decode(out)
 		local valid, err = validateRepo(repo)
 		self:assert(valid, err)
-		if not self:assert(not loadRepo(repo.name), "repo with name " .. repo.name .. " already present") then return end
+		if not self:assert(not loadRepo(repo.name), "repo '" .. repo.name .. "' already present") then return end
 		if valid and ok then
 			table.insert(repos, self.link)
 			local fetch = actions.fetch(repos)
 			fetch.critical = self.critical
 			fetch.verbose = false
 			self:assert(pcall(fetch.run, fetch))
-			self:log("added repo " .. repo.name)
+			self:log("Added repo '" .. repo.name .. "'")
 			writeConfig("repos", repos)
 		end
 	end
@@ -575,7 +614,17 @@ function actions.removeRepo(repo)
 				break
 			end
 		end
-		if self:assert(link, "repo " .. self.repo .. " not present") then
+		if self:assert(link, "repo '" .. self.repo .. "' not present") then
+			local p, e = getInstalledPackages(self.repo)
+			if not self:assert(p, e) then return end
+			if #p > 0 then
+				local uninst = actions.uninstall()
+				uninst.interactive = true
+				uninst.verbose = true
+				uninst.critical = self.critical
+				uninst.queue = p
+				uninst:run()
+			end
 			local links = getRepos()
 			for i, v in ipairs(links) do
 				if v == link then
@@ -589,7 +638,7 @@ function actions.removeRepo(repo)
 			fetch.verbose = false
 			fetch:run()
 
-			self:log("removed repo " .. self.repo)
+			self:log("Removed repo '" .. self.repo .. "'")
 		end
 	end
 
