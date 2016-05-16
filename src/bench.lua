@@ -294,7 +294,7 @@ local function getInstalledPackages(repo)
 	
 	local pkgs = {}
 	local installed = readConfig("installed", {})
-	for name, version in pairs(installed) do
+	for name, _ in pairs(installed) do
 		if repoContains(repo, name) then
 			table.insert(pkgs, name)
 		end
@@ -309,7 +309,7 @@ local function isInstalled(pkg)
 	if not pkg then return false, err end
 
 	local installed = readConfig("installed", {})
-	for name, version in pairs(installed) do
+	for name, _ in pairs(installed) do
 		if name == pkg.qname then
 			return true, ""
 		end
@@ -380,11 +380,8 @@ local function install(package)
 	end
 
 	local installed = readConfig("installed", {})
-	local locations = readConfig("install_locations", {})
-	installed[pkg.qname] = pkg.version
-	locations[pkg.qname] = installLocation
+	installed[pkg.qname] = pkg
 	writeConfig("installed", installed)
-	writeConfig("install_locations", locations)
 
 	return true, ""
 end
@@ -396,17 +393,22 @@ local function uninstall(package)
 	if not pkg then return false, e end
 
 	if not isInstalled(pkg.qname) then return false, "package '" .. pkg.qname .. "' not installed" end
-	local installLocation = readConfig("install_locations", {})[pkg.qname] or pkg.install_location or fs.combine(dirs.packages, pkg.qname)
+	--local installLocation = readConfig("install_locations", {})[pkg.qname] or pkg.install_location or fs.combine(dirs.packages, pkg.qname)
 
 	local installed = readConfig("installed", {})
-	local locations = readConfig("install_locations", {})
+	local instData = installed[pkg.qname] or pkg
+	local location = instData.install_location or fs.combine(dirs.packages, pkg.qname)
 	installed[pkg.qname] = nil
-	locations[pkg.qname] = nil
 	writeConfig("installed", installed)
-	writeConfig("install_locations", locations)
 
-	if fs.exists(installLocation) then
-		pcall(fs.delete, installLocation)
+	for name, _ in pairs(instData.download or {}) do
+		if fs.exists(fs.combine(location, name)) then
+			fs.delete(fs.combine(location, name))
+		end
+	end
+
+	if fs.exists(location) and #fs.list(location) == 0 then
+		fs.delete(location)
 	end
 
 	local repo = split(pkg.qname)
@@ -695,6 +697,8 @@ if #args > 0 then
 	local arg = table.remove(args, 1)
 
 	while arg do
+		local rawarg = arg
+		arg = tostring(arg)
 		if arg:lower() == "fetch" then
 			local fetch = actions.fetch()
 			fetch.critical = true
