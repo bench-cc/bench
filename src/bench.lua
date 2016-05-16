@@ -396,7 +396,9 @@ local function uninstall(package)
 	if not isInstalled(pkg.qname) then return false, "package '" .. pkg.qname .. "' not installed" end
 	local installLocation = readConfig("install_locations", {})[pkg.qname] or pkg.install_location or fs.combine(dirs.packages, pkg.qname)
 
-	fs.delete(installLocation)
+	if fs.exists(installLocation) then
+		pcall(fs.delete, installLocation)
+	end
 
 	local installed = readConfig("installed", {})
 	local locations = readConfig("install_locations", {})
@@ -552,6 +554,11 @@ function actions.install()
 
 	function action:run()
 		if #self.queue ~= 0 then
+			local fetch = actions.fetch()
+			fetch.critical = self.critical
+			fetch.verbose = false
+			fetch:run()
+
 			local queue2 = {}
 			for i, v in ipairs(self.queue) do
 				local pkg, e = resolvePackage(v)
@@ -585,7 +592,7 @@ function actions.install()
 				end
 				term.setCursorBlink(false)
 				print(char)
-				if not self:assert(char:lower() == "y", "user cancelled installation") then return end
+				if not self:assert(char:lower() == "y", "installation cancelled by user") then return end
 			end
 
 			local installed = {}
@@ -605,10 +612,72 @@ function actions.install()
 					self:assert(ok, err)
 					return
 				else
-					table.insert()
+					table.insert(installed, v)
 				end
 			end
-			self:log("Installation complete, " .. #queue2 .. " new packages installed.")
+			self:log("Installation complete, " .. #queue2 .. " new package(s) installed.")
+		end
+	end
+
+	return action
+end
+
+function actions.uninstall()
+	local action = actions.new("uninstall")
+	action.interactive = true
+	action.queue = {}
+
+	function action:run()
+		if #self.queue ~= 0 then
+			local queue2 = {}
+
+			for i, v in ipairs(self.queue) do
+				local pkg, e = resolvePackage(v)
+				if not self:assert(pkg, e) then return end
+				for name, version in pairs(readConfig("installed", {})) do
+					local deps, err = buildDepList(name)
+					if not self:assert(deps, err) then return end
+					if tblContains(deps, pkg.qname) and not tblContains(queue2, name) then
+						table.insert(queue2, name)
+					end
+				end
+				if not tblContains(queue2, pkg.qname) then
+					table.insert(queue2, pkg.qname)
+				end
+			end
+
+			if #queue2 == 0 then
+				self:log("No packages to uninstall.")
+				return
+			end
+
+			self:log("Packages to be removed:\n" .. table.concat(queue2, ", ") .. "\n")
+			if self.interactive then
+				term.setCursorBlink(true)
+				if #queue2 == 1 then
+					write("Remove this 1 package? [Y/N] ")
+				else
+					write("Remove these " .. #queue2 .. " packages? [Y/N] ")
+				end
+				local char = ""
+				while char:lower() ~= "y" and char:lower() ~= "n" do
+					local e = {os.pullEvent()}
+					if e[1] == "char" then char = e[2] end
+				end
+				term.setCursorBlink(false)
+				print(char)
+				if not self:assert(char:lower() == "y", "removal cancelled by user") then return end
+			end
+
+			local uninstalled = {}
+			for i, v in ipairs(queue2) do
+				self:log(("Removing package %s (%i/%i)"):format(v, i, #queue2))
+				local ok, err = uninstall(v)
+				if not self:assert(ok, err) then return else
+					table.insert(uninstalled, v)
+				end
+			end
+			self:log("Removal complete, " .. #queue2 .. " package(s) removed.")
 		end
 	end
 
@@ -633,12 +702,18 @@ if #args > 0 then
 			subcmd = "addrepo"
 		elseif arg:lower() == "removerepo" then
 			subcmd = "removerepo"
-		elseif arg:lower() == "install" then
+		elseif arg:lower() == "install" or arg:lower() == "add" then
 			subcmd = "install"
 			local inst = actions.install()
 			inst.critical = true
 			inst.verbose = true
 			table.insert(actionQueue, inst)
+		elseif arg:lower() == "uninstall" or arg:lower() == "remove" then
+			subcmd = "uninstall"
+			local uninst = actions.uninstall()
+			uninst.critical = true
+			uninst.verbose = true
+			table.insert(actionQueue, uninst)
 		elseif subcmd then
 			if subcmd == "addrepo" then
 				local add = actions.addRepo(arg)
@@ -656,8 +731,10 @@ if #args > 0 then
 				if actionQueue[#actionQueue].name == "install" then
 					-- yo dawg i heard you liked queues
 					table.insert(actionQueue[#actionQueue].queue, arg)
-				else
-					error("this should never happen!")
+				end
+			elseif subcmd == "uninstall" then
+				if actionQueue[#actionQueue].name == "uninstall" then
+					table.insert(actionQueue[#actionQueue].queue, arg)
 				end
 			end
 		else
