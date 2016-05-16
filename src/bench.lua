@@ -541,6 +541,7 @@ local function run(package, file, args)
 	if not data then return false, e end
 
 	local f = load(data, fs.getName(file), nil, setmetatable({
+		shell = shell,
 		require = function(req)
 			expect(req, "string", 1)
 
@@ -579,7 +580,7 @@ local f = fs.open(".bench/bench.lua", "r")
 local d = f.readAll()
 f.close()
 
-local actions = assert(load(d, "bench.lua"))("-q")
+local actions = assert(load(d, "bench.lua", nil, setmetatable({shell = shell}, {__index = _G})))("-q")
 
 local launch = actions.launch(%q, {...})
 launch.critical = true
@@ -1001,7 +1002,8 @@ function actions.launch(package, args)
 				local inst = readConfig("installed", {})[pkg.qname]
 				if self:assert(inst.launch, "package " .. pkg.qname .. " is not runnable") then
 					self:log("Launching " .. pkg.qname)
-					self:assert(run(pkg.qname, inst.launch, self.args))
+					local got = {run(pkg.qname, inst.launch, self.args)}
+					self:assert(got[1], got[2])
 				end
 			end
 		end
