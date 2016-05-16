@@ -5,13 +5,32 @@
 		{
 			"name": "bench",
 			"description": "a lightweight package manager for CC",
-			"version": 1.01,
+			"version": 1.02,
 			"download": {
 				"bench.lua": "https://raw.githubusercontent.com/apemanzilla-cc/bench/master/src/bench.lua"
 			},
 			"install_location": "/.bench",
 			"tags": ["bench", "package", "manager", "install"],
 			"launch": "bench.lua"
+		},
+		{
+			"name": "hellolib",
+			"description": "a hello world library",
+			"version": 1.0,
+			"download": {
+				"hellolib.lua": "https://raw.githubusercontent.com/apemanzilla-cc/bench/master/src/hellolib.lua"
+			},
+			"tags": ["hello", "world", "example", "library"]
+		},
+		{
+			"name": "hello",
+			"description": "a hello world program",
+			"version": 1.0,
+			"download": {
+				"hello.lua": "https://raw.githubusercontent.com/apemanzilla-cc/bench/master/src/hello.lua"
+			},
+			"tags": ["hello", "world", "example", "program"],
+			"launch": "hello.lua"
 		}
 	]
 }
