@@ -437,6 +437,7 @@ local function uninstall(package)
 	--local installLocation = readConfig("install_locations", {})[pkg.qname] or pkg.install_location or fs.combine(dirs.packages, pkg.qname)
 
 	local installed = readConfig("installed", {})
+	local launchers = readConfig("launchers", {})[pkg.qname] or {}
 	local instData = installed[pkg.qname] or pkg
 	local location = instData.install_location or fs.combine(dirs.packages, pkg.qname)
 	installed[pkg.qname] = nil
@@ -445,6 +446,12 @@ local function uninstall(package)
 	for name, _ in pairs(instData.download or {}) do
 		if fs.exists(fs.combine(location, name)) then
 			fs.delete(fs.combine(location, name))
+		end
+	end
+
+	for _, path in ipairs(launchers) do
+		if fs.exists(path) then
+			fs.delete(path)
 		end
 	end
 
@@ -558,6 +565,45 @@ local function run(package, file, args)
 		end
 	}, {__index = _G}))
 	return pcall(f, unpack(args or {}))
+end
+
+local launcherCode = [[-- this is an auto-generated launcher for a bench
+-- package - note that any changes may be deleted
+-- without warning!
+-- if you are looking for the source code check
+-- /.bench/packages
+
+assert(fs.exists(".bench/bench.lua"), "bench not found")
+
+local f = fs.open(".bench/bench.lua", "r")
+local d = f.readAll()
+f.close()
+
+local actions = assert(load(d, "bench.lua"))("-q")
+
+local launch = actions.launch(%q, {...})
+launch.critical = true
+launch.verbose = false
+launch.interactive = false
+launch:run()]]
+
+local function launcher(package, path)
+	expect(package, "string", 1)
+	expect(path, "string", 2)
+
+	local pkg, e = resolvePackage(package)
+	if not pkg then return false, e end
+	if not pkg.launch then return false, "package '" .. pkg.qname .. "' is not launchable" end
+
+	local launcher = launcherCode:format(pkg.qname)
+	writeFile(launcher, path)
+	local launchers = readConfig("launchers", {})
+	launchers[pkg.qname] = launchers[pkg.qname] or {}
+	if not tblContains(launchers[pkg.qname], path) then
+		table.insert(launchers[pkg.qname], path)
+	end
+	writeConfig("launchers", launchers)
+	return true, ""
 end
 
 local actions = {}
@@ -729,7 +775,7 @@ function actions.install()
 				local deps, e = buildDepList(pkg.qname)
 				if not self:assert(deps, e) then return end
 				for i, v in ipairs(deps) do
-					if not isInstalled(v) then
+					if not isInstalled(v) and not tblContains(queue2, v) then
 						table.insert(queue2, v)
 					end
 				end
@@ -778,6 +824,20 @@ function actions.install()
 					table.insert(installed, v)
 				end
 			end
+
+			local launcher = actions.launcher()
+			launcher.critical = self.critical
+			launcher.verbose = false
+			launcher.interactive = self.interactive
+			for i, v in ipairs(self.queue) do
+				local p, e = resolvePackage(v)
+				if not self:assert(p, e) then return end
+				if p.launch then
+					table.insert(launcher.queue, p.qname)
+				end
+			end
+			launcher:run()
+
 			self:log("Installation complete, " .. #queue2 .. " new package(s) installed.")
 			return true
 		end
@@ -941,10 +1001,33 @@ function actions.launch(package, args)
 				local inst = readConfig("installed", {})[pkg.qname]
 				if self:assert(inst.launch, "package " .. pkg.qname .. " is not runnable") then
 					self:log("Launching " .. pkg.qname)
-					self:assert(run(pkg.qname, inst.launch, unpack(self.args or {})))
+					self:assert(run(pkg.qname, inst.launch, self.args))
 				end
 			end
 		end
+	end
+
+	return action
+end
+
+function actions.launcher()
+	local action = actions.new("launcher")
+
+	action.queue = {}
+
+	function action:run()
+		if #self.queue > 0 then
+			for i, v in ipairs(self.queue) do
+				self:log(("Creating launcher for %s (%i/%i)"):format(v, i, #self.queue))
+				local pkg, err = resolvePackage(v)
+				if not self:assert(pkg, err) then return end
+				local inst = isInstalled(pkg.qname)
+				if not self:assert(inst, "package '" .. pkg.qname .. "' not installed") then return end
+				if not self:assert(launcher(v, fs.combine(shell.dir(), pkg.name))) then return end
+			end
+			self:log("Created launcher(s) for " .. #self.queue .. " package(s).")
+		end
+		return true
 	end
 
 	return action
@@ -994,6 +1077,12 @@ if #args > 0 then
 			upgrade.critical = true
 			upgrade.verbose = true
 			table.insert(actionQueue, upgrade)
+		elseif arg:lower() == "launcher" then
+			subcmd = "launcher"
+			local launcher = actions.launcher()
+			launcher.critical = true
+			launcher.verbose = true
+			table.insert(actionQueue, launcher)
 		elseif subcmd then
 			if subcmd == "addrepo" then
 				local add = actions.addRepo(arg)
@@ -1014,6 +1103,10 @@ if #args > 0 then
 				end
 			elseif subcmd == "uninstall" then
 				if actionQueue[#actionQueue].name == "uninstall" then
+					table.insert(actionQueue[#actionQueue].queue, arg)
+				end
+			elseif subcmd == "launcher" then
+				if actionQueue[#actionQueue].name == "launcher" then
 					table.insert(actionQueue[#actionQueue].queue, arg)
 				end
 			elseif subcmd == "launch" then
