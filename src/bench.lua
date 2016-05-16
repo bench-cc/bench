@@ -1135,6 +1135,10 @@ if #args > 0 then
 		end
 		v:run()
 	end
+else
+	local usage = "bench - the lightweight CC package manager\nusage: bench [subcommand/flag] ...\n\nsubcommands:\n*install [package1] [package2] [...]\n  attempts to install the specified packages\n\n*remove [package1] [package2] [...]\n  attemps to remove the specified packages\n\n*addrepo [uri]\n  adds a repository to find packages in\n\n*removerepo [repo name]\n  removes a repository\n\n*upgrade\n  upgrades all outdated packages\n\n*launcher [package1] [package2] [...]\n  creates launchers for specified packages in the current directory"
+	local _, h = term.getSize()
+	textutils.pagedPrint(usage, h-3)
 end
 
 return actions
