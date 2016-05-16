@@ -549,8 +549,13 @@ function actions.fetch(repos)
 			self:assert(ok, "failed to fetch repo from " .. link)
 			local repo = json:decode(out)
 			repo.link = link
-			local valid, err = validateRepo(repo)
-			self:assert(valid, "repo " .. (repo.name or ("at " .. link)) .. " is invalid: " .. err)
+			local valid, err
+			if self.critical then
+				valid, err = validateRepo(repo)
+				self:assert(valid, "repo " .. (repo.name or ("at " .. link)) .. " is invalid: " .. err)
+			else
+				valid = true
+			end
 			if ok and valid then
 				self:log(("Fetched repo '%s' (%i/%i)"):format(repo.name, i, #repos))
 				table.insert(fetched, repo)
@@ -580,10 +585,10 @@ function actions.addRepo(link)
 			end
 		end
 		local ok, out = download(self.link)
-		self:assert(ok, out)
+		if not self:assert(ok, out) then return end
 		local repo = json:decode(out)
 		local valid, err = validateRepo(repo)
-		self:assert(valid, err)
+		if not self:assert(valid, err) then return end
 		if not self:assert(not loadRepo(repo.name), "repo '" .. repo.name .. "' already present") then return end
 		if valid and ok then
 			table.insert(repos, self.link)
@@ -820,7 +825,9 @@ if #args > 0 then
 		local rawarg = arg
 		arg = tostring(arg)
 		if arg:sub(1,1) == "-" then
-			flags[arg:sub(2)] = true
+			for flag in arg:sub(2):gmatch("%w") do
+				flags[flag] = true
+			end
 		elseif arg:lower() == "fetch" then
 			local fetch = actions.fetch()
 			fetch.critical = true
