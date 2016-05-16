@@ -49,8 +49,10 @@ local function writeConfig(name, value)
 	end
 	d[name] = value
 	local f = fs.open(dirs.config, "w")
-	f.write(json:encode_pretty(d))
-	f.close()
+	if f then
+		f.write(json:encode_pretty(d))
+		f.close()
+	end
 end
 
 local function writeFile(data, file)
@@ -396,16 +398,16 @@ local function uninstall(package)
 	if not isInstalled(pkg.qname) then return false, "package '" .. pkg.qname .. "' not installed" end
 	local installLocation = readConfig("install_locations", {})[pkg.qname] or pkg.install_location or fs.combine(dirs.packages, pkg.qname)
 
-	if fs.exists(installLocation) then
-		pcall(fs.delete, installLocation)
-	end
-
 	local installed = readConfig("installed", {})
 	local locations = readConfig("install_locations", {})
 	installed[pkg.qname] = nil
 	locations[pkg.qname] = nil
 	writeConfig("installed", installed)
 	writeConfig("install_locations", locations)
+
+	if fs.exists(installLocation) then
+		pcall(fs.delete, installLocation)
+	end
 
 	local repo = split(pkg.qname)
 	if #getInstalledPackages(repo) == 0 and fs.exists(fs.combine(dirs.packages, repo)) then
