@@ -1,5 +1,5 @@
 # bench
-An easy-to-use CC package manager
+An easy-to-use CC package manager.
 
 ## installation
 To install bench, just run this command on any CC computer:
