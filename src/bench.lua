@@ -657,6 +657,16 @@ benchPublicAPI = function(self)
 
 	b.isInstalled = isInstalled
 
+	function b.getInstalledVersion(name)
+		expect(name, "string", 1)
+		local pkg, e = resolvePackage(name)
+		if not pkg then error(e, 2) end
+		local yes, e = isInstalled(name)
+		if not yes then error(e, 2) end
+		local inst = readConfig("installed", {})[pkg.qname] or {}
+		return inst.version
+	end
+
 	return b
 end
 
