@@ -457,11 +457,14 @@ local function uninstall(package)
 	--local installLocation = readConfig("install_locations", {})[pkg.qname] or pkg.install_location or fs.combine(dirs.packages, pkg.qname)
 
 	local installed = readConfig("installed", {})
-	local launchers = readConfig("launchers", {})[pkg.qname] or {}
+	local launchers = readConfig("launchers", {})
 	local instData = installed[pkg.qname] or pkg
+	local theseLaunchers = launchers[pkg.qname] or {}
 	local location = instData.install_location or fs.combine(dirs.packages, pkg.qname)
 	installed[pkg.qname] = nil
+	launchers[pkg.qname] = nil
 	writeConfig("installed", installed)
+	writeConfig("launchers", launchers)
 
 	for name, _ in pairs(instData.download or {}) do
 		if fs.exists(fs.combine(location, name)) then
@@ -469,7 +472,7 @@ local function uninstall(package)
 		end
 	end
 
-	for _, path in ipairs(launchers) do
+	for _, path in ipairs(theseLaunchers) do
 		if fs.exists(path) then
 			fs.delete(path)
 		end
