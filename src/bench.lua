@@ -690,10 +690,9 @@ function actions.addRepo(link)
 	function action:run()
 		local repos = getRepos()
 
-		for i, v in ipairs(repos) do
-			if not self:assert(v ~= self.link, "repo already present") then
-				return
-			end
+		if tblContains(repos, link) then
+			self:log("Repo already present, not adding")
+			return true
 		end
 		local ok, out = download(self.link)
 		if not self:assert(ok, out) then return end
