@@ -562,9 +562,8 @@ local function run(package, file, args)
 
 	local f = load(data, fs.getName(file), nil, setmetatable({
 		shell = shell,
-		require = function(req, args)
+		require = function(req)
 			expect(req, "string", 1)
-			expect(args, "table", 2, true)
 
 			if fs.exists(fs.combine(loc, req)) then
 				local ok, out = run(pkg.qname, req)
@@ -586,9 +585,9 @@ local function run(package, file, args)
 					f2 = table.concat(parts, "/")
 				end
 				if not p then error(err, 2) end
-				local got = {run(p.qname, f2, args)}
-				if not got[1] then error(got[2], 2) end
-				return select(2, unpack(got))
+				local ok, out = run(p.qname, f2)
+				if not ok then error(out, 2) end
+				return out
 			end
 		end
 	}, {__index = _G}))
