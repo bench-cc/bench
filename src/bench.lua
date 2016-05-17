@@ -544,6 +544,8 @@ local function upgrade(package)
 	return true, ""
 end
 
+local benchPublicAPI -- stub, defined lated
+
 local function run(package, file, args)
 	expect(package, "string", 1)
 	expect(file, "string", 2)
@@ -562,6 +564,7 @@ local function run(package, file, args)
 
 	local f = load(data, fs.getName(file), nil, setmetatable({
 		shell = shell,
+		bench = benchPublicAPI(pkg.qname),
 		require = function(req)
 			expect(req, "string", 1)
 
@@ -634,6 +637,28 @@ local function launcher(package, path)
 end
 
 local actions = {}
+
+-- declared earlier
+benchPublicAPI = function(self)
+	expect(self, "string", 1)
+
+	local b = {}
+
+	function b.thisPackage()
+		return self
+	end
+
+	function b.installedPackages()
+		local installed = readConfig("installed", {})
+		local inst = {}
+		for name, _ in pairs(installed) do table.insert(inst, name) end
+		return inst
+	end
+
+	b.isInstalled = isInstalled
+
+	return b
+end
 
 local action_mt = {}
 action_mt.critical = false
@@ -710,9 +735,10 @@ function actions.addRepo(link)
 	function action:run()
 		local repos = getRepos()
 
-		if tblContains(repos, link) then
-			self:log("Repo already present, not adding")
-			return true
+		for i, v in ipairs(repos) do
+			if not self:assert(v ~= self.link, "repo already present") then
+				return
+			end
 		end
 		local ok, out = download(self.link)
 		if not self:assert(ok, out) then return end
