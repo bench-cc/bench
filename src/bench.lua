@@ -97,7 +97,27 @@ do -- protocol handlers
 		return fs.open(path, "r")
 	end
 
-	-- todo - gist, github, grin(?), gitlab(?)
+	function phandlers.github(uri)
+		local user, repo, branch, path = nil, nil, "master", nil
+		local parts = {}
+		for part in uri:gmatch("([^/\\]+)") do
+			table.insert(parts, part)
+		end
+		user = table.remove(parts, 1) or ""
+		repo = table.remove(parts, 1) or ""
+		local r, b = repo:match("([^:]+):([^:]+)")
+		if r then repo = r branch = b end
+		local a = table.remove(parts, 1)
+		path = a
+		while a do
+			a = table.remove(parts, 1)
+			if a then path = path .. "/" .. a end
+		end
+		local url = ("https://raw.githubusercontent.com/%s/%s/%s/%s"):format(user, repo, branch, path)
+		return http.get(url)
+	end
+
+	-- todo - gist, grin(?), gitlab(?)
 end
 
 local function handle(link)
@@ -131,7 +151,7 @@ local function download(link, file)
 end
 
 local defaultRepos = {
-	"https://raw.githubusercontent.com/apemanzilla-cc/bench/master/repos/main.json"
+	"github://bench-cc/bench/repos/main.json"
 }
 
 local function getRepos()
