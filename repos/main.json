@@ -32,6 +32,16 @@
 			"tags": ["hello", "world", "example", "program"],
 			"launch": "hello.lua",
 			"depends": ["hellolib"]
+		},
+		{
+			"name": "bench-repl",
+			"description": "a REPL for debugging and developing bench packages",
+			"version": 1,
+			"tags": ["bench", "repl", "lua", "dev", "developer", "debug", "program"],
+			"download": {
+				"repl.lua": "https://raw.githubusercontent.com/apemanzilla-cc/bench/master/src/repl.lua"
+			},
+			"launch": "repl.lua"
 		}
 	]
 }
