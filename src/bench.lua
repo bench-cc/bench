@@ -167,7 +167,8 @@ local function tblContains(t, s)
 end
 
 local defaultRepos = {
-	"github://bench-cc/bench/repos/main.json"
+	"github://bench-cc/bench/repos/main.json",
+	"github://btctaras/kristwallet/bench/krist.json"
 }
 
 local function getRepos()
