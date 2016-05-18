@@ -438,6 +438,60 @@ local function reverseDepList(name, checked)
 	return rdeps, ""
 end
 
+local benchPublicAPI -- stub, defined lated
+
+local function run(package, file, args)
+	expect(package, "string", 1)
+	expect(file, "string", 2)
+	expect(args, "table", 3, true)
+
+	local pkg, e = resolvePackage(package)
+	if not pkg then return false, e end
+
+	local inst = readConfig("installed", {})[pkg.qname]
+	local loc = inst and inst.install_location or fs.combine(dirs.packages, pkg.qname)
+	local file = fs.combine(loc, file)
+	if not fs.exists(file) then return false, "file not found" end
+
+	local data, e = readFile(file)
+	if not data then return false, e end
+
+	local f = load(data, fs.getName(file), nil, setmetatable({
+		shell = shell,
+		bench = benchPublicAPI(pkg.qname),
+		require = function(req, args)
+			expect(req, "string", 1)
+			expect(args, "table", 2, true)
+
+			if fs.exists(fs.combine(loc, req)) then
+				local ok, out = run(pkg.qname, req)
+				if not ok then error(out, 2) end
+				return out
+			else
+				local parts = {}
+				for part in req:gmatch("([^/\\]+)") do
+					table.insert(parts, part)
+				end
+				local p, err, f2
+				if #parts < 2 then
+					error("could not resolve target", 2)
+				elseif #parts == 2 then
+					p, err = resolvePackage(table.remove(parts, 1))
+					f2 = table.concat(parts, "/")
+				elseif #parts >= 3 then
+					p, err = resolvePackage(table.remove(parts, 1) .. "/" .. table.remove(parts, 1))
+					f2 = table.concat(parts, "/")
+				end
+				if not p then error(err, 2) end
+				local got = {run(p.qname, f2, args)}
+				if not got[1] then error(got[2], 2) end
+				return select(2, unpack(got))
+			end
+		end
+	}, {__index = _G}))
+	return pcall(f, unpack(args or {}))
+end
+
 local function install(package)
 	-- does NOT install dependencies!
 	expect(package, "string", 1)
@@ -466,7 +520,11 @@ local function install(package)
 	installed[pkg.qname] = pkg
 	writeConfig("installed", installed)
 
-	return true, ""
+	if pkg.setup then
+		return run(pkg.qname, pkg.setup)
+	else
+		return true, ""
+	end
 end
 
 local function uninstall(package)
@@ -481,6 +539,11 @@ local function uninstall(package)
 	local installed = readConfig("installed", {})
 	local launchers = readConfig("launchers", {})
 	local instData = installed[pkg.qname] or pkg
+
+	if instData.cleanup then
+		run(instData.qname, instData.cleanup)
+	end
+
 	local theseLaunchers = launchers[pkg.qname] or {}
 	local location = instData.install_location or fs.combine(dirs.packages, pkg.qname)
 	installed[pkg.qname] = nil
@@ -567,60 +630,6 @@ local function upgrade(package)
 	end
 
 	return true, ""
-end
-
-local benchPublicAPI -- stub, defined lated
-
-local function run(package, file, args)
-	expect(package, "string", 1)
-	expect(file, "string", 2)
-	expect(args, "table", 3, true)
-
-	local pkg, e = resolvePackage(package)
-	if not pkg then return false, e end
-
-	local inst = readConfig("installed", {})[pkg.qname]
-	local loc = inst and inst.install_location or fs.combine(dirs.packages, pkg.qname)
-	local file = fs.combine(loc, file)
-	if not fs.exists(file) then return false, "file not found" end
-
-	local data, e = readFile(file)
-	if not data then return false, e end
-
-	local f = load(data, fs.getName(file), nil, setmetatable({
-		shell = shell,
-		bench = benchPublicAPI(pkg.qname),
-		require = function(req, args)
-			expect(req, "string", 1)
-			expect(args, "table", 2, true)
-
-			if fs.exists(fs.combine(loc, req)) then
-				local ok, out = run(pkg.qname, req)
-				if not ok then error(out, 2) end
-				return out
-			else
-				local parts = {}
-				for part in req:gmatch("([^/\\]+)") do
-					table.insert(parts, part)
-				end
-				local p, err, f2
-				if #parts < 2 then
-					error("could not resolve target", 2)
-				elseif #parts == 2 then
-					p, err = resolvePackage(table.remove(parts, 1))
-					f2 = table.concat(parts, "/")
-				elseif #parts >= 3 then
-					p, err = resolvePackage(table.remove(parts, 1) .. "/" .. table.remove(parts, 1))
-					f2 = table.concat(parts, "/")
-				end
-				if not p then error(err, 2) end
-				local got = {run(p.qname, f2, args)}
-				if not got[1] then error(got[2], 2) end
-				return select(2, unpack(got))
-			end
-		end
-	}, {__index = _G}))
-	return pcall(f, unpack(args or {}))
 end
 
 local launcherCode = [[-- this is an auto-generated launcher for a bench
@@ -927,14 +936,13 @@ function actions.install(queue)
 
 			for i, v in ipairs(queue2) do
 				self:log(("Installing package %s (%i/%i)"):format(v, i, #queue2))
+				table.insert(installed, v)
 				local ok, err = install(v)
 				if not ok then
 					self:log("Problem installing " .. v .. ", reverting")
 					revert()
 					self:assert(ok, err)
 					return
-				else
-					table.insert(installed, v)
 				end
 			end
 
