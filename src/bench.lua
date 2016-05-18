@@ -150,12 +150,38 @@ local function download(link, file)
 	return true, d
 end
 
+local function tblContains(t, s)
+	expect(t, "table", 1)
+	for k, v in pairs(t) do
+		if v == s then
+			return true
+		end
+	end
+	return false
+end
+
 local defaultRepos = {
 	"github://bench-cc/bench/repos/main.json"
 }
 
 local function getRepos()
-	return readConfig("repos", defaultRepos)
+	local repos = readConfig("repos", {})
+	for i, v in ipairs(defaultRepos) do
+		if not tblContains(repos, v) then
+			table.insert(repos, v)
+		end
+	end
+	return repos
+end
+
+local function saveRepos(repos)
+	local w = {}
+	for i, v in ipairs(repos) do
+		if not tblContains(w, v) and not tblContains(defaultRepos, v) then
+			table.insert(w, v)
+		end
+	end
+	writeConfig("repos", w)
 end
 
 local function loadRepos()
@@ -337,16 +363,6 @@ local function isInstalled(pkg)
 		end
 	end
 	return false, ""
-end
-
-local function tblContains(t, s)
-	expect(t, "table", 1)
-	for k, v in pairs(t) do
-		if v == s then
-			return true
-		end
-	end
-	return false
 end
 
 local function buildDepList(name)
@@ -652,11 +668,23 @@ benchPublicAPI = function(self)
 		return self
 	end
 
+	function b.repos()
+		return loadRepos()
+	end
+
 	function b.installedPackages()
-		local installed = readConfig("installed", {})
-		local inst = {}
-		for name, _ in pairs(installed) do table.insert(inst, name) end
-		return inst
+		return readConfig("installed", {})
+	end
+
+	function b.availablePackages()
+		local repos = loadRepos()
+		local pkgs = {}
+		for _, v in pairs(repos) do
+			for _, p in pairs(v.packages) do
+				pkgs[p.qname] = p
+			end
+		end
+		return pkgs
 	end
 
 	b.isInstalled = isInstalled
@@ -767,7 +795,7 @@ function actions.addRepo(link)
 			fetch.verbose = false
 			self:assert(pcall(fetch.run, fetch))
 			self:log("Added repo '" .. repo.name .. "'")
-			writeConfig("repos", repos)
+			saveRepos(repos)
 		end
 		return true
 	end
@@ -807,7 +835,7 @@ function actions.removeRepo(repo)
 					table.remove(links, i)
 				end
 			end
-			writeConfig("repos", links)
+			saveRepos(links)
 
 			local fetch = actions.fetch()
 			fetch.critical = self.critical
