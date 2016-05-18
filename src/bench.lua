@@ -1,6 +1,8 @@
 assert(_HOST or _CC_VERSION, "CC 1.74+ is required")
 assert(http, "HTTP API is required")
 
+local DEBUG = settings and settings.get("bench.debug")
+
 local dirs = {}
 dirs.root = ".bench"
 dirs.repos = fs.combine(dirs.root, "repos.json")
@@ -50,7 +52,11 @@ local function writeConfig(name, value)
 	d[name] = value
 	local f = fs.open(dirs.config, "w")
 	if f then
-		f.write(json:encode_pretty(d))
+		if DEBUG then
+			f.write(json:encode_pretty(d))
+		else
+			f.write(json:encode(d))
+		end
 		f.close()
 	end
 end
@@ -150,12 +156,38 @@ local function download(link, file)
 	return true, d
 end
 
+local function tblContains(t, s)
+	expect(t, "table", 1)
+	for k, v in pairs(t) do
+		if v == s then
+			return true
+		end
+	end
+	return false
+end
+
 local defaultRepos = {
 	"github://bench-cc/bench/repos/main.json"
 }
 
 local function getRepos()
-	return readConfig("repos", defaultRepos)
+	local repos = readConfig("repos", {})
+	for i, v in ipairs(defaultRepos) do
+		if not tblContains(repos, v) then
+			table.insert(repos, v)
+		end
+	end
+	return repos
+end
+
+local function saveRepos(repos)
+	local w = {}
+	for i, v in ipairs(repos) do
+		if not tblContains(w, v) and not tblContains(defaultRepos, v) then
+			table.insert(w, v)
+		end
+	end
+	writeConfig("repos", w)
 end
 
 local function loadRepos()
@@ -339,16 +371,6 @@ local function isInstalled(pkg)
 	return false, ""
 end
 
-local function tblContains(t, s)
-	expect(t, "table", 1)
-	for k, v in pairs(t) do
-		if v == s then
-			return true
-		end
-	end
-	return false
-end
-
 local function buildDepList(name)
 	expect(name, "string", 1)
 	local pkg, e = resolvePackage(name)
@@ -416,6 +438,60 @@ local function reverseDepList(name, checked)
 	return rdeps, ""
 end
 
+local benchPublicAPI -- stub, defined lated
+
+local function run(package, file, args)
+	expect(package, "string", 1)
+	expect(file, "string", 2)
+	expect(args, "table", 3, true)
+
+	local pkg, e = resolvePackage(package)
+	if not pkg then return false, e end
+
+	local inst = readConfig("installed", {})[pkg.qname]
+	local loc = inst and inst.install_location or fs.combine(dirs.packages, pkg.qname)
+	local file = fs.combine(loc, file)
+	if not fs.exists(file) then return false, "file not found" end
+
+	local data, e = readFile(file)
+	if not data then return false, e end
+
+	local f = load(data, fs.getName(file), nil, setmetatable({
+		shell = shell,
+		bench = benchPublicAPI(pkg.qname),
+		require = function(req, args)
+			expect(req, "string", 1)
+			expect(args, "table", 2, true)
+
+			if fs.exists(fs.combine(loc, req)) then
+				local ok, out = run(pkg.qname, req)
+				if not ok then error(out, 2) end
+				return out
+			else
+				local parts = {}
+				for part in req:gmatch("([^/\\]+)") do
+					table.insert(parts, part)
+				end
+				local p, err, f2
+				if #parts < 2 then
+					error("could not resolve target", 2)
+				elseif #parts == 2 then
+					p, err = resolvePackage(table.remove(parts, 1))
+					f2 = table.concat(parts, "/")
+				elseif #parts >= 3 then
+					p, err = resolvePackage(table.remove(parts, 1) .. "/" .. table.remove(parts, 1))
+					f2 = table.concat(parts, "/")
+				end
+				if not p then error(err, 2) end
+				local got = {run(p.qname, f2, args)}
+				if not got[1] then error(got[2], 2) end
+				return select(2, unpack(got))
+			end
+		end
+	}, {__index = _G}))
+	return pcall(f, unpack(args or {}))
+end
+
 local function install(package)
 	-- does NOT install dependencies!
 	expect(package, "string", 1)
@@ -444,7 +520,11 @@ local function install(package)
 	installed[pkg.qname] = pkg
 	writeConfig("installed", installed)
 
-	return true, ""
+	if pkg.setup then
+		return run(pkg.qname, pkg.setup)
+	else
+		return true, ""
+	end
 end
 
 local function uninstall(package)
@@ -457,11 +537,19 @@ local function uninstall(package)
 	--local installLocation = readConfig("install_locations", {})[pkg.qname] or pkg.install_location or fs.combine(dirs.packages, pkg.qname)
 
 	local installed = readConfig("installed", {})
-	local launchers = readConfig("launchers", {})[pkg.qname] or {}
+	local launchers = readConfig("launchers", {})
 	local instData = installed[pkg.qname] or pkg
+
+	if instData.cleanup then
+		run(instData.qname, instData.cleanup)
+	end
+
+	local theseLaunchers = launchers[pkg.qname] or {}
 	local location = instData.install_location or fs.combine(dirs.packages, pkg.qname)
 	installed[pkg.qname] = nil
+	launchers[pkg.qname] = nil
 	writeConfig("installed", installed)
+	writeConfig("launchers", launchers)
 
 	for name, _ in pairs(instData.download or {}) do
 		if fs.exists(fs.combine(location, name)) then
@@ -469,7 +557,7 @@ local function uninstall(package)
 		end
 	end
 
-	for _, path in ipairs(launchers) do
+	for _, path in ipairs(theseLaunchers) do
 		if fs.exists(path) then
 			fs.delete(path)
 		end
@@ -544,56 +632,6 @@ local function upgrade(package)
 	return true, ""
 end
 
-local function run(package, file, args)
-	expect(package, "string", 1)
-	expect(file, "string", 2)
-	expect(args, "table", 3, true)
-
-	local pkg, e = resolvePackage(package)
-	if not pkg then return false, e end
-
-	local inst = readConfig("installed", {})[pkg.qname]
-	local loc = inst and inst.install_location or fs.combine(dirs.packages, pkg.qname)
-	local file = fs.combine(loc, file)
-	if not fs.exists(file) then return false, "file not found" end
-
-	local data, e = readFile(file)
-	if not data then return false, e end
-
-	local f = load(data, fs.getName(file), nil, setmetatable({
-		shell = shell,
-		require = function(req)
-			expect(req, "string", 1)
-
-			if fs.exists(fs.combine(loc, req)) then
-				local ok, out = run(pkg.qname, req)
-				if not ok then error(out, 2) end
-				return out
-			else
-				local parts = {}
-				for part in req:gmatch("([^/\\]+)") do
-					table.insert(parts, part)
-				end
-				local p, err, f2
-				if #parts < 2 then
-					error("could not resolve target", 2)
-				elseif #parts == 2 then
-					p, err = resolvePackage(table.remove(parts, 1))
-					f2 = table.concat(parts, "/")
-				elseif #parts >= 3 then
-					p, err = resolvePackage(table.remove(parts, 1) .. "/" .. table.remove(parts, 1))
-					f2 = table.concat(parts, "/")
-				end
-				if not p then error(err, 2) end
-				local ok, out = run(p.qname, f2)
-				if not ok then error(out, 2) end
-				return out
-			end
-		end
-	}, {__index = _G}))
-	return pcall(f, unpack(args or {}))
-end
-
 local launcherCode = [[-- this is an auto-generated launcher for a bench
 -- package - note that any changes may be deleted
 -- without warning!
@@ -634,6 +672,57 @@ local function launcher(package, path)
 end
 
 local actions = {}
+
+-- declared earlier
+benchPublicAPI = function(self)
+	expect(self, "string", 1)
+
+	local b = {}
+
+	function b.thisPackage()
+		return self
+	end
+
+	function b.resolveFile(file)
+		expect(file, "string", 1)
+		if file:sub(1,1) == "/" or file:sub(1,1) == "\\" then return file end
+		local i = readConfig("installed", {})[self] or {}
+		return fs.combine(i.install_location or fs.combine(dirs.packages, self), file)
+	end
+
+	function b.repos()
+		return loadRepos()
+	end
+
+	function b.installedPackages()
+		return readConfig("installed", {})
+	end
+
+	function b.availablePackages()
+		local repos = loadRepos()
+		local pkgs = {}
+		for _, v in pairs(repos) do
+			for _, p in pairs(v.packages) do
+				pkgs[p.qname] = p
+			end
+		end
+		return pkgs
+	end
+
+	b.isInstalled = isInstalled
+
+	function b.getInstalledVersion(name)
+		expect(name, "string", 1)
+		local pkg, e = resolvePackage(name)
+		if not pkg then error(e, 2) end
+		local yes, e = isInstalled(name)
+		if not yes then error(e, 2) end
+		local inst = readConfig("installed", {})[pkg.qname] or {}
+		return inst.version
+	end
+
+	return b
+end
 
 local action_mt = {}
 action_mt.critical = false
@@ -691,8 +780,13 @@ function actions.fetch(repos)
 				table.insert(fetched, repo)
 			end
 		end
-
-		if self:assert(writeFile(json:encode_pretty(fetched), dirs.repos)) then
+		local d
+		if DEBUG then
+			d = json:encode_pretty(fetched)
+		else
+			d = json:encode(fetched)
+		end
+		if self:assert(writeFile(d, dirs.repos)) then
 			self:log("Fetch complete")
 		end
 		return true
@@ -728,7 +822,7 @@ function actions.addRepo(link)
 			fetch.verbose = false
 			self:assert(pcall(fetch.run, fetch))
 			self:log("Added repo '" .. repo.name .. "'")
-			writeConfig("repos", repos)
+			saveRepos(repos)
 		end
 		return true
 	end
@@ -768,7 +862,7 @@ function actions.removeRepo(repo)
 					table.remove(links, i)
 				end
 			end
-			writeConfig("repos", links)
+			saveRepos(links)
 
 			local fetch = actions.fetch()
 			fetch.critical = self.critical
@@ -783,10 +877,11 @@ function actions.removeRepo(repo)
 	return action
 end
 
-function actions.install()
+function actions.install(queue)
+	expect(queue, "table", 1, true)
 	local action = actions.new("install")
 	action.interactive = true
-	action.queue = {}
+	action.queue = queue or {}
 
 	function action:run()
 		if #self.queue ~= 0 then
@@ -841,14 +936,13 @@ function actions.install()
 
 			for i, v in ipairs(queue2) do
 				self:log(("Installing package %s (%i/%i)"):format(v, i, #queue2))
+				table.insert(installed, v)
 				local ok, err = install(v)
 				if not ok then
 					self:log("Problem installing " .. v .. ", reverting")
 					revert()
 					self:assert(ok, err)
 					return
-				else
-					table.insert(installed, v)
 				end
 			end
 
@@ -873,10 +967,11 @@ function actions.install()
 	return action
 end
 
-function actions.uninstall()
+function actions.uninstall(queue)
+	expect(queue, "table", 1, true)
 	local action = actions.new("uninstall")
 	action.interactive = true
-	action.queue = {}
+	action.queue = queue or{}
 
 	function action:run()
 		if #self.queue ~= 0 then
