@@ -5,7 +5,7 @@
 		{
 			"name": "bench",
 			"description": "a lightweight package manager for CC",
-			"version": 1.1,
+			"version": 1.11,
 			"download": {
 				"bench.lua": "github://bench-cc/bench/src/bench.lua"
 			},
