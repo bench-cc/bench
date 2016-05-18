@@ -1,6 +1,8 @@
 assert(_HOST or _CC_VERSION, "CC 1.74+ is required")
 assert(http, "HTTP API is required")
 
+local DEBUG = settings and settings.get("bench.debug")
+
 local dirs = {}
 dirs.root = ".bench"
 dirs.repos = fs.combine(dirs.root, "repos.json")
@@ -50,7 +52,11 @@ local function writeConfig(name, value)
 	d[name] = value
 	local f = fs.open(dirs.config, "w")
 	if f then
-		f.write(json:encode_pretty(d))
+		if DEBUG then
+			f.write(json:encode_pretty(d))
+		else
+			f.write(json:encode(d))
+		end
 		f.close()
 	end
 end
@@ -668,6 +674,13 @@ benchPublicAPI = function(self)
 		return self
 	end
 
+	function b.resolveFile(file)
+		expect(file, "string", 1)
+		if file:sub(1,1) == "/" or file:sub(1,1) == "\\" then return file end
+		local i = readConfig("installed", {})[self] or {}
+		return fs.combine(i.install_location or fs.combine(dirs.packages, self), file)
+	end
+
 	function b.repos()
 		return loadRepos()
 	end
@@ -758,8 +771,13 @@ function actions.fetch(repos)
 				table.insert(fetched, repo)
 			end
 		end
-
-		if self:assert(writeFile(json:encode_pretty(fetched), dirs.repos)) then
+		local d
+		if DEBUG then
+			d = json:encode_pretty(fetched)
+		else
+			d = json:encode(fetched)
+		end
+		if self:assert(writeFile(d, dirs.repos)) then
 			self:log("Fetch complete")
 		end
 		return true
