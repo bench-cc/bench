@@ -3,6 +3,7 @@ local colorhex = {}
 for k, v in pairs(colors) do
 	if type(v) == "number" then
 		colorhex[k] = ("%x"):format(math.log(v) / math.log(2))
+		colorhex[v] = ("%x"):format(math.log(v) / math.log(2))
 	end
 end
 
