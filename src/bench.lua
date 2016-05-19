@@ -460,6 +460,7 @@ local function run(package, file, args)
 	local f = load(data, fs.getName(file), nil, setmetatable({
 		shell = shell,
 		bench = benchPublicAPI(pkg.qname),
+		expect = expect,
 		require = function(req, args)
 			expect(req, "string", 1)
 			expect(args, "table", 2, true)
