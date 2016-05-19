@@ -1,5 +1,15 @@
 {
 	"name": "apemanzilla",
-	"description": "repository containing apemanzilla's packages",
-	"packages": []
+	"description": "libraries and programs developed by apemanzilla",
+	"packages": [
+		{
+			"name": "colorhex",
+			"description": "library for converting terminal colors to hex and back",
+			"version": 1,
+			"tags": ["color", "ui", "library", "hex", "gui", "colors", "term"],
+			"download": {
+				"colorhex.lua": "github://bench-cc/bench/src/apemanzilla/colorhex.lua"
+			}
+		},
+	]
 }

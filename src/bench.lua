@@ -168,6 +168,7 @@ end
 
 local defaultRepos = {
 	"github://bench-cc/bench/repos/main.json",
+	"github://bench-cc/bench/repos/apemanzilla.json",
 	"github://btctaras/kristwallet/bench/krist.json"
 }
 
