@@ -70,6 +70,6 @@ The install_location attribute specifies where package data should be downloaded
 The tags attribute specifies search tags to use. It is not currently used, but will be in the future.
 
 #### 3.9 - setup and cleanup (string, optional)
-The setup and cleanup attributes specify files to run when the package is being installed or removed, respectively. They are not currently used, but will be in the future.
+The setup and cleanup attributes specify files to run when the package is being installed or removed, respectively. During installation, if the setup script fails, the installation will also fail and be reverted. This does not happen during cleanup.
 
 This program uses a minified version of Jeffrey Friedl's [JSON API](http://regex.info/blog/lua/json), which is licensed under the [Creative Commons license with attribution](https://creativecommons.org/licenses/by/3.0/us/)
