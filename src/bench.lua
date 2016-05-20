@@ -442,17 +442,26 @@ end
 
 local benchPublicAPI -- stub, defined lated
 
-local function run(package, file, args)
-	expect(package, "string", 1)
-	expect(file, "string", 2)
+local function run(package, sfile, args)
+	expect(package, "string", 1, true)
+	expect(sfile, "string", 2)
 	expect(args, "table", 3, true)
 
-	local pkg, e = resolvePackage(package)
-	if not pkg then return false, e end
+	local file, qname, loc
+	if package then
+		local pkg, e = resolvePackage(package)
+		if not pkg then return false, e end
+		if not isInstalled(pkg.qname) then return false, "package not installed" end
 
-	local inst = readConfig("installed", {})[pkg.qname]
-	local loc = inst and inst.install_location or fs.combine(dirs.packages, pkg.qname)
-	local file = fs.combine(loc, file)
+		qname = pkg.qname
+		local inst = readConfig("installed", {})[pkg.qname]
+		loc = inst and inst.install_location or fs.combine(dirs.packages, pkg.qname)
+		file = fs.combine(loc, sfile)
+	else
+		file = sfile
+		loc = fs.getDir(sfile)
+	end
+
 	if not fs.exists(file) then return false, "file not found" end
 
 	local data, e = readFile(file)
@@ -460,14 +469,14 @@ local function run(package, file, args)
 
 	local f = load(data, fs.getName(file), nil, setmetatable({
 		shell = shell,
-		bench = benchPublicAPI(pkg.qname),
+		bench = benchPublicAPI(qname),
 		expect = expect,
 		require = function(req, args)
 			expect(req, "string", 1)
 			expect(args, "table", 2, true)
 
 			if fs.exists(fs.combine(loc, req)) then
-				local ok, out = run(pkg.qname, req)
+				local ok, out = run(qname, req)
 				if not ok then error(out, 2) end
 				return out
 			else
@@ -678,7 +687,7 @@ local actions = {}
 
 -- declared earlier
 benchPublicAPI = function(self)
-	expect(self, "string", 1)
+	expect(self, "string", 1, true)
 
 	local b = {}
 
@@ -986,11 +995,11 @@ function actions.uninstall(queue)
 				for name, version in pairs(readConfig("installed", {})) do
 					local deps, err = buildDepList(name)
 					if not self:assert(deps, err) then return end
-					if tblContains(deps, pkg.qname) and not tblContains(queue2, name) then
+					if tblContains(deps, pkg.qname) and not tblContains(queue2, name) and isInstalled(pkg.qname) then
 						table.insert(queue2, name)
 					end
 				end
-				if not tblContains(queue2, pkg.qname) then
+				if not tblContains(queue2, pkg.qname) and isInstalled(pkg.qname) then
 					table.insert(queue2, pkg.qname)
 				end
 			end
@@ -1121,7 +1130,7 @@ function actions.launch(package, args)
 
 	function action:run()
 		local pkg, e = resolvePackage(self.pkg)
-		if self:assert(pkg, e) then
+		if pkg then
 			if self:assert(isInstalled(pkg.qname)) then
 				local inst = readConfig("installed", {})[pkg.qname]
 				if self:assert(inst.launch, "package " .. pkg.qname .. " is not runnable") then
@@ -1130,6 +1139,11 @@ function actions.launch(package, args)
 					self:assert(got[1], got[2])
 				end
 			end
+		elseif fs.exists(shell.resolve(package)) then
+			local got = {run(nil, shell.resolve(package), self.args)}
+			self:assert(got[1], got[2])
+		else
+			self:assert(false, e)
 		end
 	end
 
@@ -1196,7 +1210,7 @@ if #args > 0 then
 			uninst.critical = true
 			uninst.verbose = true
 			table.insert(actionQueue, uninst)
-		elseif arg:lower() == "launch" then
+		elseif arg:lower() == "launch" or arg:lower() == "run" then
 			subcmd = "launch"
 		elseif arg:lower() == "upgrade" then
 			local upgrade = actions.upgrade()
