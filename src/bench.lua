@@ -467,7 +467,7 @@ local function run(package, sfile, args)
 	local data, e = readFile(file)
 	if not data then return false, e end
 
-	local f = load(data, fs.getName(file), nil, setmetatable({
+	local f, e = load(data, fs.getName(file), nil, setmetatable({
 		shell = shell,
 		bench = benchPublicAPI(qname),
 		expect = expect,
@@ -501,6 +501,7 @@ local function run(package, sfile, args)
 			end
 		end
 	}, {__index = _G}))
+	if not f then return false, e end
 	return pcall(f, unpack(args or {}))
 end
 
