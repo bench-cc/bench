@@ -17,6 +17,7 @@
 			"name": "hellolib",
 			"description": "a hello world library",
 			"version": 1,
+			"lib": "hellolib.lua",
 			"download": {
 				"hellolib.lua": "github://bench-cc/bench/src/hellolib.lua"
 			},

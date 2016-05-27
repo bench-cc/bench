@@ -169,7 +169,8 @@ end
 local defaultRepos = {
 	"github://bench-cc/bench/repos/main.json",
 	"github://bench-cc/bench/repos/apemanzilla.json",
-	"github://btctaras/kristwallet/bench/krist.json"
+	"github://btctaras/kristwallet/bench/krist.json",
+	"github://clgd/benchrepo/repo.json"
 }
 
 local function getRepos()
@@ -235,6 +236,7 @@ local packageOptional = {
 	download = "table",
 	depends = "table",
 	launch = "string",
+	lib = "string",
 	install_location = "string",
 	tags = "table",
 	setup = "string",
@@ -486,15 +488,26 @@ local function run(package, sfile, args)
 				end
 				local p, err, f2
 				if #parts < 2 then
-					error("could not resolve target", 2)
-				elseif #parts == 2 then
+					--error("could not resolve target", 2)
 					p, err = resolvePackage(table.remove(parts, 1))
-					f2 = table.concat(parts, "/")
+					if p then f2 = p.lib end
+				elseif #parts == 2 then
+					local first = table.remove(parts, 1)
+					p, err = resolvePackage(first)
+					if not p then
+						p, err = resolvePackage(first .. "/" .. table.remove(parts, 1))
+					end
+					if p and p.lib and #parts == 0 then
+						f2 = p.lib
+					else
+						f2 = table.concat(parts, "/")
+					end
 				elseif #parts >= 3 then
 					p, err = resolvePackage(table.remove(parts, 1) .. "/" .. table.remove(parts, 1))
 					f2 = table.concat(parts, "/")
 				end
 				if not p then error(err, 2) end
+				if not f2 then error("file not found", 2) end
 				local got = {run(p.qname, f2, args)}
 				if not got[1] then error(got[2], 2) end
 				return select(2, unpack(got))

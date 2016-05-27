@@ -63,13 +63,16 @@ The `depends` attribute specifies packages that must be downloaded for your pack
 #### 3.6 - launch (string, optional)
 The `launch` attribute specifies which file from the package to use when running the package. If omitted, the package will not be launchable, so `bench launch package` and `bench launcher package` will fail. `require` will still be usable to load files from the package, however.
 
-#### 3.7 - install_location (string, optional)
+#### 3.7 - lib (string, optional)
+The `lib` attribute works similarly to the `launch` attribute, but it specifies what file should be loaded when `require` is called without explicitly specifying a file within the package.
+
+#### 3.8 - install_location (string, optional)
 The `install_location` attribute specifies where package data should be downloaded and saved. Do NOT use this attribute unless you know exactly what you are trying to do - bench will handle it automatically!
 
-#### 3.8 - tags (array, optional)
+#### 3.9 - tags (array, optional)
 The `tags` attribute specifies search tags to use. It is not currently used, but will be in the future.
 
-#### 3.9 - setup and cleanup (string, optional)
+#### 3.10 - setup and cleanup (string, optional)
 The `setup` and `cleanup` attributes specify files to run when the package is being installed or removed, respectively. During installation, if the setup script fails, the installation will also fail and be reverted. This does not happen during cleanup.
 
 This program uses a minified version of Jeffrey Friedl's [JSON API](http://regex.info/blog/lua/json), which is licensed under the [Creative Commons license with attribution](https://creativecommons.org/licenses/by/3.0/us/)
