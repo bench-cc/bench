@@ -11,6 +11,16 @@
 			"download": {
 				"colorhex.lua": "github://bench-cc/bench/src/apemanzilla/colorhex.lua"
 			}
+		},
+		{
+			"name": "stringutils",
+			"description": "a library for manipulating and formatting strings",
+			"version": 1.0,
+			"tags": ["string", "ui", "library", "gui", "term", "format"],
+			"lib": "stringutils.lua",
+			"download": {
+				"stringutils.lua": "github://bench-cc/bench/src/apemanzilla/stringutils.lua"
+			}
 		}
 	]
 }
