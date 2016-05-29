@@ -21,6 +21,16 @@
 			"download": {
 				"stringutils.lua": "github://bench-cc/bench/src/apemanzilla/stringutils.lua"
 			}
+		},
+		{
+			"name": "keymonitor",
+			"description": "a library for monitoring key stats",
+			"version": 1.0,
+			"tags": ["keys", "key", "keyboard", "pressed", "library", "state", "daemon"],
+			"lib": "keymonitor.lua",
+			"download": {
+				"keymonitor.lua": "github://bench-cc/bench/src/apemanzilla/keymonitor.lua"
+			}
 		}
 	]
 }
