@@ -15,7 +15,7 @@
 		{
 			"name": "stringutils",
 			"description": "a library for manipulating and formatting strings",
-			"version": 1.0,
+			"version": 1.01,
 			"tags": ["string", "ui", "library", "gui", "term", "format"],
 			"lib": "stringutils.lua",
 			"download": {
