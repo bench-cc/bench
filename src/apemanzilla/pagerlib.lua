@@ -94,7 +94,7 @@ function pagerlib.scroll(text, options)
 	local infoText = "Press " .. table.concat(quitKeys, "/") .. " to exit "
 
 	local function draw()
-		local progress = math.floor(math.min(scrolly / (#lines - h), 1) * 100) .. "%"
+		local progress = #lines > h and (math.floor(math.min(scrolly / (#lines - h), 1) * 100) .. "%") or "100%"
 		render(lines, scrolly, scrollx, stringutils.fixLength(infoText, w):sub(1, -(#progress + 1)) .. progress)
 	end
 
@@ -107,20 +107,26 @@ function pagerlib.scroll(text, options)
 				scrolly = math.max(scrolly - 1, 0)
 				draw()
 			elseif contains(options.keys.down, e[2]) then
-				scrolly = math.min(scrolly + 1, #lines - h)
-				draw()
+				if #lines >= h then
+					scrolly = math.min(scrolly + 1, #lines - h)
+					draw()
+				end
 			elseif contains(options.keys.pgup, e[2]) then
 				scrolly = math.max(scrolly - h, 0)
 				draw()
 			elseif contains(options.keys.pgdown, e[2]) then
-				scrolly = math.min(scrolly + h, #lines - h)
-				draw()
+				if #lines >= h then
+					scrolly = math.min(scrolly + h, #lines - h)
+					draw()
+				end
 			elseif contains(options.keys.left, e[2]) then
 				scrollx = math.max(scrollx - 1, 0)
 				draw()
 			elseif contains(options.keys.right, e[2]) then
-				scrollx = math.min(scrollx + 1, maxlen - w)
-				draw()
+				if maxlen >= w then
+					scrollx = math.min(scrollx + 1, maxlen - w)
+					draw()
+				end
 			elseif contains(options.keys.quit, e[2]) then
 				run = false
 			end
