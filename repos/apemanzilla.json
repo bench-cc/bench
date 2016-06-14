@@ -31,6 +31,19 @@
 			"download": {
 				"keymonitor.lua": "github://bench-cc/bench/src/apemanzilla/keymonitor.lua"
 			}
+		},
+		{
+			"name": "pager",
+			"description": "a program and library that lets you scroll through lots of text",
+			"version": 1.0,
+			"depends": ["stringutils"],
+			"tags": ["pager", "less", "scroll", "text", "library", "program", "interface", "string", "term", "ui"],
+			"lib": "pagerlib.lua",
+			"launch": "pager.lua",
+			"download": {
+				"pager.lua": "github://bench-cc/bench/src/apemanzilla/pager.lua",
+				"pagerlib.lua": "github://bench-cc/bench/src/apemanzilla/pagerlib.lua"
+			}
 		}
 	]
 }
