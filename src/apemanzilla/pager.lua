@@ -22,6 +22,3 @@ local d = f.readAll()
 f.close()
 
 pagerlib.scroll(d)
-
-os.queueEvent("fake")
-while os.pullEvent() ~= "fake" do end

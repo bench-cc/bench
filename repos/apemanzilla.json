@@ -35,7 +35,7 @@
 		{
 			"name": "pager",
 			"description": "a program and library that lets you scroll through lots of text",
-			"version": 1.01,
+			"version": 1.02,
 			"depends": ["stringutils"],
 			"tags": ["pager", "less", "scroll", "text", "library", "program", "interface", "string", "term", "ui"],
 			"lib": "pagerlib.lua",

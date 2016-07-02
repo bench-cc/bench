@@ -137,6 +137,10 @@ function pagerlib.scroll(text, options)
 		term.clear()
 		term.setCursorPos(1,1)
 	end
+	
+	-- catch spare key/char events
+	os.queueEvent("fake")
+	while os.pullEvent() ~= "fake" do end
 end
 
 return pagerlib
