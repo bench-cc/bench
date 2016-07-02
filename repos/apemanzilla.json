@@ -48,7 +48,7 @@
 		{
 			"name": "charlist",
 			"description": "provides a scrollable list of character 32-255",
-			"version": 1.0,
+			"version": 1.01,
 			"depends": ["stringutils", "pager"],
 			"tags": ["char", "teletext", "scroll", "program", "text", "utility", "term"],
 			"launch": "charlist.lua",
