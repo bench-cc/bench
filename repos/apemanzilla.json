@@ -44,6 +44,17 @@
 				"pager.lua": "github://bench-cc/bench/src/apemanzilla/pager.lua",
 				"pagerlib.lua": "github://bench-cc/bench/src/apemanzilla/pagerlib.lua"
 			}
+		},
+		{
+			"name": "charlist",
+			"description": "provides a scrollable list of character 32-255",
+			"version": 1.0,
+			"depends": ["stringutils", "pager"],
+			"tags": ["char", "teletext", "scroll", "program", "text", "utility", "term"],
+			"launch": "charlist.lua",
+			"download": {
+				"charlist.lua": "github://bench-cc/bench/src/apemanzilla/charlist.lua",
+			}
 		}
 	]
 }
