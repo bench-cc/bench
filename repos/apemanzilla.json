@@ -53,7 +53,7 @@
 			"tags": ["char", "teletext", "scroll", "program", "text", "utility", "term"],
 			"launch": "charlist.lua",
 			"download": {
-				"charlist.lua": "github://bench-cc/bench/src/apemanzilla/charlist.lua",
+				"charlist.lua": "github://bench-cc/bench/src/apemanzilla/charlist.lua"
 			}
 		}
 	]
