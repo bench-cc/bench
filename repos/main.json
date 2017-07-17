@@ -37,7 +37,7 @@
 		{
 			"name": "bench-repl",
 			"description": "a REPL for debugging and developing bench packages",
-			"version": 1,
+			"version": 1.01,
 			"tags": ["bench", "repl", "lua", "dev", "developer", "debug", "program"],
 			"download": {
 				"repl.lua": "github://bench-cc/bench/src/repl.lua"
