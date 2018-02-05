@@ -1,22 +1,51 @@
 local args = { ... }
 
-local function expect(arg, typ, n)
-    local errfmt = "Expected %s, got %s for argument #%d"
+local function validateValue(value, typ)
+    local t = type(value)
 
-    if type(n) ~= "number" then error(errfmt:format("number", type(n), 3), 2) end
+    if type(typ) == "string" then
+        if t == typ then return true end
+
+
+        local typ, pattern = typ:match("^(%a+):(.+)$")
+
+        if pattern then
+            if typ == "string" and t == typ then return value:match(pattern) ~= nil end
+            --todo: number ranges?
+        end
+
+        return false
+    elseif type(typ) == "table" then
+        local out = false
+
+        for i, v in ipairs(typ) do
+            out = out or validateValue(value, v)
+        end
+
+        return out
+    else
+        error(("Invalid validator type - expected string/table, got %s for argument #2"):format(type(typ)) ,2)
+    end
+end
+
+local function expect(arg, typ, n, errcb)
+    local errfmt = "Expected %s, got %s for argument #%d"
+    local errcb = type(errcb) == "function" and errcb or error
+
+    if type(n) ~= "number" then errcb(errfmt:format("number", type(n), 3), 2) end
 
     local t = type(arg)
 
     if type(typ) == "string" then
-        if t ~= typ then error(errfmt:format(typ, t, n), 3) end
+        if t ~= typ then errcb(errfmt:format(typ, t, n), 3) end
     elseif type(typ) == "table" then
         for i, v in ipairs(typ) do
             if t == v then return arg end
         end
 
-        error(errfmt:format(table.concat(typ, "/"), t, n), 3)
+        errcb(errfmt:format(table.concat(typ, "/"), t, n), 3)
     else
-        error(errfmt:format("string/table", type(typ), 2), 2)
+        errcb(errfmt:format("string/table", type(typ), 2), 2)
     end
 
     return arg
@@ -122,6 +151,43 @@ local function getRepos()
     return repos
 end
 
+local function addRepo(name, uri)
+    expect(name, "string", 1)
+    expect(uri, "string", 1)
+
+    local userRepos = readConfig("customRepos", {})
+    userRepos = type(userRepos) == "table" and userRepos or {}
+
+    userRepos[name] = uri
+
+    writeConfig("customRepos", userRepos)
+end
+
+local function validateSchema(tbl, schema, errcb)
+    expect(tbl, "table", 1)
+    expect(schema, "table", 2)
+    local errcb = expect(errcb, { "function", "nil" }, 3) or error
+
+    for k, v in pairs(schema) do
+        if not validateValue(tbl[k], v) then
+            errcb(("Validation failed - expected %s, got %s for key %s"):format(type(v) == "table" and table.concat(v, "/") or tostring(v), type(tbl[k]), k))
+            return false
+        end
+    end
+
+    return true
+end
+
+local packageSchema = {
+    name = "string:^[a-zA-Z0-9_-]+$",
+    description = { "nil", "string:^%C*$" },
+    version = "number",
+    author = { "nil", "string:^%C*$" },
+    depends = { "nil", "table" },
+    files = { "nil", "table" },
+    launch = { "nil", "string" }
+}
+
 local function parseRepo(source, errcb)
     expect(source, "string", 1)
     local errcb = expect(errcb, { "function", "nil" }, 2) or error
@@ -130,17 +196,37 @@ local function parseRepo(source, errcb)
 
     local loadenv = {}
 
-    -- todo: loadenv.repo, loadenv.package
+    function loadenv.package(data) return data end
 
-    local f, err = load(source)
+    function loadenv.repo(data)
+        expect(data, "table", 1, errcb)
+
+        local packages = {}
+
+        for i, v in ipairs(type(data) == "table" and data or {}) do
+            if validateSchema(v, packageSchema, errcb) then
+                table.insert(packages, v)
+            end
+        end
+
+        return packages
+    end
+
+    local f, err = load(source, nil, "t", loadenv)
 
     if not f then
         errcb(err)
     else
-        f()
+        local ok, got = pcall(f)
 
-        return {} -- placeholder
+        if not ok then
+            errcb(got)
+        else
+            return got or {}
+        end
     end
+
+    return {}
 end
 
 local function loadRepos(errcb)
@@ -165,6 +251,7 @@ local function loadRepos(errcb)
 end
 
 local benchapi = {
+    validateValue = validateValue,
     expect = expect,
     protocols = protocols,
     readURI = readURI,
@@ -173,6 +260,9 @@ local benchapi = {
     readConfig = readConfig,
     writeConfig = writeConfig,
     getRepos = getRepos,
+    addRepo = addRepo,
+    validateSchema = validateSchema,
+    packageSchema = packageSchema,
     parseRepo = parseRepo,
     loadRepos = loadRepos
 }
